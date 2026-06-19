@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>食材から夕飯メニュー</title>
+<style>
+  :root {
+    --bg: #fff7f0;
+    --card: #ffffff;
+    --primary: #e8714a;
+    --primary-dark: #cc5a35;
+    --accent: #4a9e8e;
+    --text: #3a3330;
+    --muted: #8a807a;
+    --border: #f0e2d6;
+    --shadow: 0 4px 16px rgba(180,120,80,.12);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 16px;
+    max-width: 880px;
+    margin: 0 auto;
+  }
+  header { text-align: center; padding: 12px 0 18px; }
+  h1 { font-size: 1.5rem; color: var(--primary-dark); }
+  .sub { color: var(--muted); font-size: .85rem; margin-top: 4px; }
+
+  .ingredients {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(98px, 1fr));
+    gap: 10px;
+    margin-bottom: 22px;
+  }
+  .ing-btn {
+    font-family: inherit;
+    background: #fff;
+    border: 2px solid var(--border);
+    border-radius: 16px;
+    padding: 14px 6px;
+    cursor: pointer;
+    text-align: center;
+    transition: transform .08s, border-color .15s, background .15s;
+  }
+  .ing-btn:active { transform: scale(.95); }
+  .ing-btn:hover { border-color: var(--primary); }
+  .ing-btn .emoji { font-size: 1.9rem; display: block; line-height: 1.2; }
+  .ing-btn .label { font-size: .85rem; font-weight: 600; margin-top: 2px; }
+  .ing-btn .count { font-size: .68rem; color: var(--muted); }
+  .ing-btn.on { background: var(--primary); border-color: var(--primary); }
+  .ing-btn.on .label, .ing-btn.on .count { color: #fff; }
+
+  .result-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px; gap: 10px; flex-wrap: wrap;
+  }
+  .result-head h2 { font-size: 1.15rem; color: var(--primary-dark); }
+  .result-head h2 .emoji { margin-right: 4px; }
+  .btn-random {
+    font-family: inherit; font-size: .85rem; font-weight: 600;
+    background: var(--accent); color: #fff; border: none;
+    border-radius: 12px; padding: 9px 16px; cursor: pointer;
+    box-shadow: var(--shadow);
+  }
+  .btn-random:active { transform: scale(.96); }
+
+  .genre-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .genre-chip {
+    font-family: inherit; font-size: .8rem; font-weight: 600;
+    padding: 6px 14px; border-radius: 20px;
+    border: 1.5px solid var(--border); background: #fff; color: var(--muted);
+    cursor: pointer; user-select: none;
+  }
+  .genre-chip:hover { border-color: var(--accent); }
+  .genre-chip.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  .menu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+  .menu-card {
+    background: var(--card);
+    border-radius: 16px;
+    padding: 15px 16px;
+    box-shadow: var(--shadow);
+    border-top: 4px solid var(--primary);
+    transition: transform .12s, box-shadow .12s;
+  }
+  .menu-card.pick { border-top-color: var(--accent); outline: 2.5px solid var(--accent); animation: pop .35s; }
+  @keyframes pop { 0%{transform:scale(.92)} 60%{transform:scale(1.03)} 100%{transform:scale(1)} }
+  .menu-card .name { font-size: 1.1rem; font-weight: 700; }
+  .menu-card .tags { font-size: .72rem; color: var(--muted); margin: 4px 0 10px; }
+  .menu-card .tag { display: inline-block; background: #f6ede4; border-radius: 6px; padding: 1px 7px; margin: 0 4px 4px 0; }
+  .menu-card .ing-title { font-size: .72rem; color: var(--accent); font-weight: 700; margin-bottom: 3px; }
+  .menu-card .ing-list { font-size: .82rem; color: var(--text); }
+  .menu-card .ing-list span:not(:last-child)::after { content: "・"; color: var(--muted); }
+
+  .empty { text-align: center; color: var(--muted); padding: 40px 0; }
+  footer { text-align: center; color: var(--muted); font-size: .75rem; margin: 30px 0 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🍳 食材から夕飯メニュー</h1>
+  <div class="sub">使いたい食材を選ぶと、その食材のメニューを提案します。</div>
+</header>
+
+<div class="ingredients" id="ingredients"></div>
+
+<div class="result-head" id="resultHead" style="display:none;">
+  <h2 id="resultTitle"></h2>
+  <button class="btn-random" onclick="pickRandom()">🎲 おまかせ1品</button>
+</div>
+
+<div class="genre-bar" id="genreBar" style="display:none;"></div>
+<div class="menu-grid" id="menuGrid"></div>
+<div class="empty" id="emptyMsg">↑ 上から食材を選んでください 🥢</div>
+
+<footer>気になるメニューの材料はカードに表示されます</footer>
+
+<script>
+// 食材カテゴリ
+const INGREDIENTS = [
+  { key:"豚肉",   emoji:"🐖", label:"豚肉" },
+  { key:"鶏肉",   emoji:"🐔", label:"鶏肉" },
+  { key:"牛肉",   emoji:"🐄", label:"牛肉" },
+  { key:"ひき肉", emoji:"🍖", label:"ひき肉" },
+  { key:"魚介",   emoji:"🐟", label:"魚介" },
+  { key:"卵豆腐", emoji:"🥚", label:"卵・豆腐" },
+  { key:"その他", emoji:"🥦", label:"その他" },
+];
+
+// main: 主材料カテゴリ / genre: 料理ジャンル
+const MENUS = [
+  { name:"豚の生姜焼き", main:"豚肉", genre:"和食", tags:["定番","ごはん進む"], ing:["豚ロース薄切り","玉ねぎ","生姜","キャベツ"] },
+  { name:"とんかつ", main:"豚肉", genre:"和食", tags:["揚げ物","ごちそう"], ing:["豚ロース厚切り","キャベツ","パン粉","卵"] },
+  { name:"豚キムチ炒め", main:"豚肉", genre:"中華", tags:["スタミナ","簡単"], ing:["豚バラ肉","キムチ","にら","もやし"] },
+  { name:"回鍋肉", main:"豚肉", genre:"中華", tags:["ごはん進む","炒め物"], ing:["豚バラ肉","キャベツ","ピーマン","甜麺醤"] },
+  { name:"野菜たっぷり八宝菜", main:"豚肉", genre:"中華", tags:["野菜","あんかけ"], ing:["豚こま肉","白菜","にんじん","うずら卵","きくらげ"] },
+  { name:"カレーライス", main:"豚肉", genre:"洋食", tags:["作り置き","簡単"], ing:["豚こま肉","じゃがいも","にんじん","玉ねぎ","カレールウ"] },
+  { name:"焼きうどん", main:"豚肉", genre:"麺類", tags:["簡単","時短"], ing:["うどん","豚こま肉","キャベツ","にんじん","かつお節"] },
+  { name:"豚バラ大根", main:"豚肉", genre:"和食", tags:["煮物","ほっこり"], ing:["豚バラ肉","大根","生姜","めんつゆ"] },
+  { name:"酢豚", main:"豚肉", genre:"中華", tags:["ごちそう","甘酢"], ing:["豚もも肉","ピーマン","玉ねぎ","にんじん","ケチャップ"] },
+  { name:"豚しゃぶサラダ", main:"豚肉", genre:"和食", tags:["さっぱり","ヘルシー"], ing:["豚しゃぶ用肉","レタス","トマト","ごまだれ"] },
+  { name:"豚の角煮", main:"豚肉", genre:"和食", tags:["ごちそう","煮込み"], ing:["豚バラブロック","生姜","ゆで卵","長ねぎ"] },
+  { name:"トンテキ", main:"豚肉", genre:"洋食", tags:["スタミナ","ガッツリ"], ing:["豚ロース厚切り","にんにく","キャベツ","ウスターソース"] },
+  { name:"豚汁", main:"豚肉", genre:"和食", tags:["汁物","具だくさん"], ing:["豚こま肉","大根","にんじん","ごぼう","豆腐","味噌"] },
+  { name:"ポークソテー", main:"豚肉", genre:"洋食", tags:["簡単","定番"], ing:["豚ロース","玉ねぎ","にんにく","しょうゆ"] },
+  { name:"豚バラ白菜のミルフィーユ鍋", main:"豚肉", genre:"鍋", tags:["簡単","あったか"], ing:["豚バラ肉","白菜","ポン酢","柚子こしょう"] },
+  { name:"スペアリブのオーブン焼き", main:"豚肉", genre:"洋食", tags:["ごちそう","BBQ"], ing:["スペアリブ","にんにく","はちみつ","ケチャップ"] },
+  { name:"豚キムチチゲ", main:"豚肉", genre:"エスニック", tags:["鍋","ピリ辛"], ing:["豚バラ肉","キムチ","豆腐","にら"] },
+  { name:"ヤンニョムポーク", main:"豚肉", genre:"エスニック", tags:["甘辛","スタミナ"], ing:["豚こま肉","コチュジャン","にんにく","ごま"] },
+
+  { name:"鶏の唐揚げ", main:"鶏肉", genre:"和食", tags:["人気","揚げ物"], ing:["鶏もも肉","にんにく","生姜","レモン","片栗粉"] },
+  { name:"鶏の照り焼き", main:"鶏肉", genre:"和食", tags:["定番","ごはん進む"], ing:["鶏もも肉","長ねぎ","みりん"] },
+  { name:"親子丼", main:"鶏肉", genre:"丼もの", tags:["丼","簡単"], ing:["鶏もも肉","卵","玉ねぎ","三つ葉"] },
+  { name:"鶏団子鍋", main:"鶏肉", genre:"鍋", tags:["定番","あったか"], ing:["鶏ひき肉","白菜","長ねぎ","豆腐","えのき"] },
+  { name:"鶏のトマト煮込み", main:"鶏肉", genre:"洋食", tags:["煮込み","おしゃれ"], ing:["鶏もも肉","トマト缶","玉ねぎ","にんにく","しめじ"] },
+  { name:"よだれ鶏", main:"鶏肉", genre:"中華", tags:["さっぱり","ピリ辛"], ing:["鶏むね肉","長ねぎ","ラー油","ごま"] },
+  { name:"チキン南蛮", main:"鶏肉", genre:"和食", tags:["揚げ物","ごちそう"], ing:["鶏もも肉","卵","タルタルソース","酢"] },
+  { name:"鶏むねの油淋鶏", main:"鶏肉", genre:"中華", tags:["揚げ物","甘酢"], ing:["鶏むね肉","長ねぎ","生姜","酢","片栗粉"] },
+  { name:"手羽元の甘辛煮", main:"鶏肉", genre:"和食", tags:["煮物","ごはん進む"], ing:["鶏手羽元","ゆで卵","しょうゆ","みりん"] },
+  { name:"チキンソテー", main:"鶏肉", genre:"洋食", tags:["簡単","定番"], ing:["鶏もも肉","じゃがいも","ローズマリー","にんにく"] },
+  { name:"鶏むねのチキン南蛮風", main:"鶏肉", genre:"和食", tags:["節約","ボリューム"], ing:["鶏むね肉","卵","タルタルソース"] },
+  { name:"鶏ときのこのクリーム煮", main:"鶏肉", genre:"洋食", tags:["煮込み","濃厚"], ing:["鶏もも肉","しめじ","玉ねぎ","牛乳","バター"] },
+  { name:"バンバンジー", main:"鶏肉", genre:"中華", tags:["さっぱり","ヘルシー"], ing:["鶏むね肉","きゅうり","トマト","ごまだれ"] },
+  { name:"鶏肉と大根の煮物", main:"鶏肉", genre:"和食", tags:["煮物","ほっこり"], ing:["鶏もも肉","大根","にんじん","しょうゆ"] },
+  { name:"タンドリーチキン", main:"鶏肉", genre:"エスニック", tags:["スパイス","おもてなし"], ing:["鶏もも肉","ヨーグルト","カレー粉","にんにく"] },
+  { name:"鶏のフォー", main:"鶏肉", genre:"エスニック", tags:["麺","あっさり"], ing:["フォー","鶏むね肉","パクチー","もやし"] },
+  { name:"水炊き", main:"鶏肉", genre:"鍋", tags:["シメは雑炊","あったか"], ing:["鶏もも肉","白菜","豆腐","春菊","ポン酢"] },
+  { name:"鶏のクリームシチュー", main:"鶏肉", genre:"洋食", tags:["煮込み","子ども◎"], ing:["鶏もも肉","じゃがいも","にんじん","玉ねぎ","牛乳"] },
+  { name:"鶏チャーシュー", main:"鶏肉", genre:"中華", tags:["作り置き","お弁当◎"], ing:["鶏むね肉","しょうゆ","はちみつ","生姜"] },
+
+  { name:"肉じゃが", main:"牛肉", genre:"和食", tags:["煮物","ほっこり"], ing:["牛切り落とし","じゃがいも","にんじん","玉ねぎ","しらたき"] },
+  { name:"牛丼", main:"牛肉", genre:"丼もの", tags:["定番","時短"], ing:["牛切り落とし","玉ねぎ","紅生姜"] },
+  { name:"チンジャオロース", main:"牛肉", genre:"中華", tags:["ごはん進む","炒め物"], ing:["牛肉細切り","ピーマン","たけのこ水煮","オイスターソース"] },
+  { name:"ビーフストロガノフ", main:"牛肉", genre:"洋食", tags:["煮込み","おしゃれ"], ing:["牛切り落とし","マッシュルーム","玉ねぎ","生クリーム"] },
+  { name:"牛肉とごぼうのしぐれ煮", main:"牛肉", genre:"和食", tags:["作り置き","ごはん進む"], ing:["牛切り落とし","ごぼう","生姜","しょうゆ"] },
+  { name:"ビーフステーキ", main:"牛肉", genre:"洋食", tags:["ごちそう","シンプル"], ing:["牛ステーキ肉","にんにく","クレソン","バター"] },
+  { name:"プルコギ", main:"牛肉", genre:"中華", tags:["スタミナ","甘辛"], ing:["牛切り落とし","玉ねぎ","にんじん","にら","コチュジャン"] },
+  { name:"すき焼き", main:"牛肉", genre:"鍋", tags:["ごちそう","鍋"], ing:["牛すき焼き肉","長ねぎ","春菊","しらたき","焼き豆腐","卵"] },
+  { name:"ローストビーフ", main:"牛肉", genre:"洋食", tags:["ごちそう","おもてなし"], ing:["牛ももブロック","玉ねぎ","にんにく","しょうゆ"] },
+  { name:"牛肉とピーマンの中華炒め", main:"牛肉", genre:"中華", tags:["時短","ごはん進む"], ing:["牛切り落とし","ピーマン","もやし","オイスターソース"] },
+  { name:"ビビンバ", main:"牛肉", genre:"エスニック", tags:["丼","ワンプレート"], ing:["牛切り落とし","ほうれん草","もやし","にんじん","卵","ごはん"] },
+  { name:"肉豆腐", main:"牛肉", genre:"和食", tags:["煮物","ほっこり"], ing:["牛切り落とし","焼き豆腐","長ねぎ","しょうゆ"] },
+  { name:"牛しゃぶ", main:"牛肉", genre:"鍋", tags:["さっぱり","ごちそう"], ing:["牛しゃぶ肉","水菜","えのき","ポン酢"] },
+  { name:"ハッシュドビーフ", main:"牛肉", genre:"洋食", tags:["煮込み","子ども◎"], ing:["牛切り落とし","玉ねぎ","マッシュルーム","デミグラスソース"] },
+
+  { name:"ハンバーグ", main:"ひき肉", genre:"洋食", tags:["定番","子ども◎"], ing:["合いびき肉","玉ねぎ","パン粉","卵","デミグラスソース"] },
+  { name:"餃子", main:"ひき肉", genre:"中華", tags:["人気","手作り"], ing:["豚ひき肉","キャベツ","にら","餃子の皮","にんにく"] },
+  { name:"ロールキャベツ", main:"ひき肉", genre:"洋食", tags:["煮込み","ほっこり"], ing:["合いびき肉","キャベツ","玉ねぎ","コンソメ"] },
+  { name:"そぼろ丼", main:"ひき肉", genre:"丼もの", tags:["時短","子ども◎"], ing:["鶏ひき肉","卵","しょうゆ","ごはん"] },
+  { name:"ピーマンの肉詰め", main:"ひき肉", genre:"洋食", tags:["ごはん進む","定番"], ing:["合いびき肉","ピーマン","玉ねぎ","パン粉"] },
+  { name:"キーマカレー", main:"ひき肉", genre:"洋食", tags:["簡単","スパイス"], ing:["合いびき肉","玉ねぎ","トマト缶","カレー粉","卵"] },
+  { name:"メンチカツ", main:"ひき肉", genre:"洋食", tags:["揚げ物","ごちそう"], ing:["合いびき肉","玉ねぎ","パン粉","卵","キャベツ"] },
+  { name:"ミートソースパスタ", main:"ひき肉", genre:"麺類", tags:["パスタ","子ども◎"], ing:["合いびき肉","玉ねぎ","トマト缶","スパゲッティ","にんにく"] },
+  { name:"つくね", main:"ひき肉", genre:"和食", tags:["甘辛","お弁当◎"], ing:["鶏ひき肉","長ねぎ","卵黄","しょうゆ","みりん"] },
+  { name:"麻婆茄子", main:"ひき肉", genre:"中華", tags:["ごはん進む","ピリ辛"], ing:["豚ひき肉","なす","ピーマン","豆板醤","にんにく"] },
+  { name:"タコライス", main:"ひき肉", genre:"洋食", tags:["時短","ワンプレート"], ing:["合いびき肉","レタス","トマト","チーズ","ごはん"] },
+  { name:"スコッチエッグ", main:"ひき肉", genre:"洋食", tags:["ごちそう","お弁当◎"], ing:["合いびき肉","ゆで卵","玉ねぎ","パン粉"] },
+  { name:"ガパオライス", main:"ひき肉", genre:"エスニック", tags:["丼","スパイス"], ing:["鶏ひき肉","パプリカ","バジル","ナンプラー","卵","ごはん"] },
+  { name:"麻婆春雨", main:"ひき肉", genre:"中華", tags:["ごはん進む","ピリ辛"], ing:["豚ひき肉","春雨","にら","豆板醤"] },
+  { name:"そぼろの炒り豆腐", main:"ひき肉", genre:"和食", tags:["節約","作り置き"], ing:["鶏ひき肉","木綿豆腐","にんじん","卵"] },
+  { name:"ミートボールのトマト煮", main:"ひき肉", genre:"洋食", tags:["煮込み","子ども◎"], ing:["合いびき肉","トマト缶","玉ねぎ","チーズ"] },
+
+  { name:"鮭の塩焼き", main:"魚介", genre:"和食", tags:["ヘルシー","定番"], ing:["生鮭","大根（おろし用）","レモン"] },
+  { name:"鯖の味噌煮", main:"魚介", genre:"和食", tags:["煮物","ごはん進む"], ing:["さば","生姜","味噌"] },
+  { name:"ぶり大根", main:"魚介", genre:"和食", tags:["煮物","ほっこり"], ing:["ぶり","大根","生姜"] },
+  { name:"白身魚のムニエル", main:"魚介", genre:"洋食", tags:["ヘルシー","簡単"], ing:["白身魚","バター","レモン","小麦粉"] },
+  { name:"エビチリ", main:"魚介", genre:"中華", tags:["ごちそう","ピリ辛"], ing:["むきえび","長ねぎ","豆板醤","ケチャップ"] },
+  { name:"アジフライ", main:"魚介", genre:"和食", tags:["揚げ物","定番"], ing:["あじ開き","キャベツ","パン粉","卵"] },
+  { name:"さんまの塩焼き", main:"魚介", genre:"和食", tags:["季節","シンプル"], ing:["さんま","大根（おろし用）","すだち"] },
+  { name:"鮭のちゃんちゃん焼き", main:"魚介", genre:"和食", tags:["野菜","ホットプレート"], ing:["生鮭","キャベツ","玉ねぎ","味噌","バター"] },
+  { name:"鮭のホイル焼き", main:"魚介", genre:"洋食", tags:["簡単","ヘルシー"], ing:["生鮭","玉ねぎ","しめじ","バター","レモン"] },
+  { name:"いわしの梅煮", main:"魚介", genre:"和食", tags:["煮物","さっぱり"], ing:["いわし","梅干し","生姜","しょうゆ"] },
+  { name:"えびフライ", main:"魚介", genre:"洋食", tags:["揚げ物","ごちそう"], ing:["えび","パン粉","卵","タルタルソース","キャベツ"] },
+  { name:"かじきのソテー", main:"魚介", genre:"洋食", tags:["簡単","ヘルシー"], ing:["めかじき","トマト","バジル","にんにく"] },
+  { name:"あさりの酒蒸し", main:"魚介", genre:"和食", tags:["おつまみ","時短"], ing:["あさり","にんにく","酒","長ねぎ"] },
+  { name:"たらのちり鍋", main:"魚介", genre:"鍋", tags:["ヘルシー","あったか"], ing:["生たら","白菜","豆腐","長ねぎ","春菊"] },
+  { name:"まぐろの漬け丼", main:"魚介", genre:"丼もの", tags:["時短","さっぱり"], ing:["まぐろ刺身","しょうゆ","わさび","大葉","ごはん"] },
+  { name:"いか大根", main:"魚介", genre:"和食", tags:["煮物","ほっこり"], ing:["いか","大根","生姜","しょうゆ"] },
+  { name:"ぶりの照り焼き", main:"魚介", genre:"和食", tags:["定番","ごはん進む"], ing:["ぶり","しょうゆ","みりん","生姜"] },
+  { name:"アクアパッツァ", main:"魚介", genre:"洋食", tags:["おもてなし","おしゃれ"], ing:["白身魚","あさり","ミニトマト","にんにく","オリーブ"] },
+  { name:"海鮮チヂミ", main:"魚介", genre:"エスニック", tags:["おつまみ","ホットプレート"], ing:["いか","えび","にら","小麦粉"] },
+  { name:"カキフライ", main:"魚介", genre:"洋食", tags:["揚げ物","季節"], ing:["牡蠣","パン粉","卵","キャベツ"] },
+  { name:"サーモンのカルパッチョ", main:"魚介", genre:"洋食", tags:["前菜","おしゃれ"], ing:["サーモン刺身","玉ねぎ","レモン","オリーブオイル"] },
+  { name:"鱈のホイル蒸し", main:"魚介", genre:"和食", tags:["ヘルシー","簡単"], ing:["生たら","しめじ","長ねぎ","ポン酢"] },
+
+  { name:"オムライス", main:"卵豆腐", genre:"洋食", tags:["子ども◎","簡単"], ing:["卵","鶏もも肉","玉ねぎ","ケチャップ","ごはん"] },
+  { name:"天津飯", main:"卵豆腐", genre:"丼もの", tags:["ふわとろ","簡単"], ing:["卵","かに風味かまぼこ","長ねぎ","ごはん"] },
+  { name:"麻婆豆腐", main:"卵豆腐", genre:"中華", tags:["ピリ辛","ごはん進む"], ing:["木綿豆腐","豚ひき肉","長ねぎ","豆板醤","にんにく"] },
+  { name:"豆腐ハンバーグ", main:"卵豆腐", genre:"和食", tags:["ヘルシー","ふわふわ"], ing:["木綿豆腐","鶏ひき肉","玉ねぎ","大根おろし"] },
+  { name:"ニラ玉", main:"卵豆腐", genre:"中華", tags:["時短","あと一品"], ing:["卵","にら","ごま油"] },
+  { name:"厚揚げの照り焼き", main:"卵豆腐", genre:"和食", tags:["節約","簡単"], ing:["厚揚げ","長ねぎ","しょうゆ","みりん"] },
+  { name:"だし巻き卵", main:"卵豆腐", genre:"和食", tags:["あと一品","定番"], ing:["卵","だし","大根おろし"] },
+  { name:"茶碗蒸し", main:"卵豆腐", genre:"和食", tags:["ほっこり","おもてなし"], ing:["卵","だし","鶏もも肉","しいたけ","三つ葉"] },
+  { name:"豆腐とひき肉のそぼろあんかけ", main:"卵豆腐", genre:"和食", tags:["ヘルシー","あったか"], ing:["木綿豆腐","鶏ひき肉","生姜","片栗粉"] },
+  { name:"スパニッシュオムレツ", main:"卵豆腐", genre:"洋食", tags:["野菜","おしゃれ"], ing:["卵","じゃがいも","玉ねぎ","ベーコン","チーズ"] },
+  { name:"豆腐ステーキ", main:"卵豆腐", genre:"和食", tags:["節約","ヘルシー"], ing:["木綿豆腐","きのこ","バター","しょうゆ"] },
+  { name:"かに玉", main:"卵豆腐", genre:"中華", tags:["ふわとろ","ごちそう"], ing:["卵","かに缶","長ねぎ","しいたけ"] },
+  { name:"湯豆腐", main:"卵豆腐", genre:"鍋", tags:["シンプル","ヘルシー"], ing:["豆腐","昆布","ポン酢","長ねぎ"] },
+  { name:"オムレツ", main:"卵豆腐", genre:"洋食", tags:["簡単","定番"], ing:["卵","チーズ","ケチャップ"] },
+  { name:"豆腐チゲ", main:"卵豆腐", genre:"エスニック", tags:["鍋","ピリ辛"], ing:["豆腐","あさり","キムチ","卵"] },
+  { name:"高野豆腐の含め煮", main:"卵豆腐", genre:"和食", tags:["和食","ほっこり"], ing:["高野豆腐","にんじん","さやいんげん","だし"] },
+  { name:"豆腐グラタン", main:"卵豆腐", genre:"洋食", tags:["ヘルシー","濃厚"], ing:["木綿豆腐","ほうれん草","チーズ","ホワイトソース"] },
+
+  { name:"カルボナーラ", main:"その他", genre:"麺類", tags:["パスタ","洋食"], ing:["スパゲッティ","ベーコン","卵","生クリーム","粉チーズ"] },
+  { name:"ナポリタン", main:"その他", genre:"麺類", tags:["パスタ","子ども◎"], ing:["スパゲッティ","ウインナー","ピーマン","玉ねぎ","ケチャップ"] },
+  { name:"野菜炒め", main:"その他", genre:"中華", tags:["時短","あっさり"], ing:["キャベツ","もやし","にんじん","ピーマン","ウインナー"] },
+  { name:"ジャーマンポテト", main:"その他", genre:"洋食", tags:["おつまみ","簡単"], ing:["じゃがいも","ベーコン","玉ねぎ","にんにく"] },
+  { name:"ペペロンチーノ", main:"その他", genre:"麺類", tags:["パスタ","シンプル"], ing:["スパゲッティ","にんにく","唐辛子","オリーブオイル"] },
+  { name:"焼きそば", main:"その他", genre:"麺類", tags:["時短","子ども◎"], ing:["中華麺","豚こま肉","キャベツ","もやし","ソース"] },
+  { name:"きのこの和風パスタ", main:"その他", genre:"麺類", tags:["あっさり","簡単"], ing:["スパゲッティ","しめじ","えのき","ベーコン","しょうゆ"] },
+  { name:"チャーハン", main:"その他", genre:"中華", tags:["時短","ワンプレート"], ing:["ごはん","卵","長ねぎ","チャーシュー"] },
+  { name:"お好み焼き", main:"その他", genre:"和食", tags:["子ども◎","ホットプレート"], ing:["キャベツ","豚バラ肉","卵","小麦粉","お好みソース"] },
+  { name:"グラタン", main:"その他", genre:"洋食", tags:["濃厚","子ども◎"], ing:["マカロニ","鶏もも肉","玉ねぎ","牛乳","チーズ"] },
+  { name:"ラタトゥイユ", main:"その他", genre:"洋食", tags:["野菜","作り置き"], ing:["なす","ズッキーニ","トマト缶","パプリカ","にんにく"] },
+  { name:"パッタイ", main:"その他", genre:"エスニック", tags:["麺","甘酸っぱい"], ing:["米麺","えび","もやし","ピーナッツ","ナンプラー"] },
+  { name:"冷やし中華", main:"その他", genre:"麺類", tags:["季節","さっぱり"], ing:["中華麺","きゅうり","ハム","卵","トマト"] },
+  { name:"ミネストローネ", main:"その他", genre:"スープ", tags:["野菜","あったか"], ing:["トマト缶","キャベツ","にんじん","玉ねぎ","ベーコン"] },
+  { name:"ポトフ", main:"その他", genre:"スープ", tags:["煮込み","あったか"], ing:["ウインナー","じゃがいも","にんじん","玉ねぎ","コンソメ"] },
+  { name:"シーザーサラダ", main:"その他", genre:"サラダ", tags:["副菜","おしゃれ"], ing:["レタス","ベーコン","クルトン","粉チーズ"] },
+  { name:"野菜たっぷりスープカレー", main:"その他", genre:"エスニック", tags:["スパイス","野菜"], ing:["手羽元","なす","パプリカ","じゃがいも","スープカレーの素"] },
+];
+
+let selected = null;
+let genreFilter = null; // null = すべて
+
+function buildIngredients(){
+  const el = document.getElementById("ingredients");
+  el.innerHTML = INGREDIENTS.map(g=>{
+    const n = MENUS.filter(m=>m.main===g.key).length;
+    return `<button class="ing-btn" data-k="${g.key}" onclick="selectIngredient('${g.key}')">
+      <span class="emoji">${g.emoji}</span>
+      <span class="label">${g.label}</span>
+      <span class="count">${n}品</span>
+    </button>`;
+  }).join("");
+}
+
+function selectIngredient(key){
+  selected = key;
+  genreFilter = null; // 食材を変えたらジャンル絞り込みはリセット
+  document.querySelectorAll(".ing-btn").forEach(b=> b.classList.toggle("on", b.dataset.k===key));
+  buildGenreBar();
+  renderMenus();
+}
+
+function buildGenreBar(){
+  const bar = document.getElementById("genreBar");
+  if(!selected){ bar.style.display="none"; bar.innerHTML=""; return; }
+  // この食材に存在するジャンルを出現順で列挙
+  const genres = [];
+  MENUS.filter(m=>m.main===selected).forEach(m=>{ if(!genres.includes(m.genre)) genres.push(m.genre); });
+  bar.style.display = "flex";
+  const all = `<span class="genre-chip ${genreFilter===null?'on':''}" onclick="filterGenre(null)">すべて</span>`;
+  bar.innerHTML = all + genres.map(g=>{
+    const n = MENUS.filter(m=>m.main===selected && m.genre===g).length;
+    return `<span class="genre-chip ${genreFilter===g?'on':''}" onclick="filterGenre('${g}')">${g} ${n}</span>`;
+  }).join("");
+}
+
+function filterGenre(g){
+  genreFilter = g;
+  buildGenreBar();
+  renderMenus();
+}
+
+function currentList(){
+  return MENUS.filter(m=>m.main===selected && (genreFilter===null || m.genre===genreFilter));
+}
+
+function renderMenus(pickIdx){
+  const head = document.getElementById("resultHead");
+  const grid = document.getElementById("menuGrid");
+  const empty = document.getElementById("emptyMsg");
+  if(!selected){ head.style.display="none"; grid.innerHTML=""; empty.style.display="block"; return; }
+  empty.style.display="none";
+  head.style.display="flex";
+  const info = INGREDIENTS.find(g=>g.key===selected);
+  const list = currentList();
+  const suffix = genreFilter ? `・${genreFilter}` : "";
+  document.getElementById("resultTitle").innerHTML = `<span class="emoji">${info.emoji}</span>${info.label}${suffix}のメニュー（${list.length}品）`;
+  grid.innerHTML = list.map((m,i)=>`
+    <div class="menu-card ${i===pickIdx?'pick':''}">
+      <div class="name">${m.name}</div>
+      <div class="tags"><span class="tag">${m.genre}</span>${m.tags.map(t=>`<span class="tag">${t}</span>`).join("")}</div>
+      <div class="ing-title">材料</div>
+      <div class="ing-list">${m.ing.map(x=>`<span>${x}</span>`).join("")}</div>
+    </div>`).join("");
+}
+
+function pickRandom(){
+  if(!selected) return;
+  const list = currentList();
+  if(list.length===0) return;
+  const idx = Math.floor(Math.random()*list.length);
+  renderMenus(idx);
+  const cards = document.querySelectorAll(".menu-card");
+  if(cards[idx]) cards[idx].scrollIntoView({behavior:"smooth", block:"center"});
+}
+
+buildIngredients();
+</script>
+</body>
+</html>
